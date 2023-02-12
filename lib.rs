@@ -129,6 +129,12 @@ mod erc721 {
             self.token_owner.get(id)
         }
 
+        /// Return all tokens of owner
+        #[ink(message)]
+        pub fn tokens_of_owner(&self, owner: AccountId) -> Vec<TokenId> {
+            self.owned_tokens.get(owner).unwrap_or_default()
+        }
+
         /// Transfers the token from the caller to the given destination.
         #[ink(message)]
         pub fn transfer(
@@ -337,6 +343,24 @@ mod erc721 {
             assert_eq!(erc721.mint(1), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.balance_of(accounts.alice), 1);
+        }
+
+        #[ink_lang::test]
+        fn tokens_of_owner_works() {
+            let accounts =
+                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            // Create a new contract instance.
+            let mut erc721 = Erc721::new();
+            // Token 1 does not exists.
+            assert_eq!(erc721.owner_of(1), None);
+            // Alice does not owns tokens.
+            assert_eq!(erc721.tokens_of_owner(accounts.alice), vec![]);
+            // Create token Id 1.
+            assert_eq!(erc721.mint(1), Ok(()));
+            assert_eq!(erc721.mint(2), Ok(()));
+            assert_eq!(erc721.mint(3), Ok(()));
+            // Alice owns 1 token.
+            assert_eq!(erc721.tokens_of_owner(accounts.alice), vec![1, 2, 3]);
         }
 
         #[ink_lang::test]
