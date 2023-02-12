@@ -55,16 +55,9 @@ use ink_lang as ink;
 mod erc721 {
     use ink_storage::traits::SpreadAllocate;
     use ink_storage::Mapping;
-    use serde::{Deserialize, Serialize};
 
-    use scale::{Decode, Encode};
     use ink_prelude::vec::Vec;
-    use ink_prelude::string::String;
-
-    // use scale::{
-    //     Decode,
-    //     Encode,
-    // };
+    use scale::{Decode, Encode};
 
     /// A token ID.
     pub type TokenId = u32;
@@ -79,12 +72,12 @@ mod erc721 {
         /// Mapping from owner to number of owned token.
         owned_tokens_count: Mapping<AccountId, u32>,
         /// Token metadata
-        token_data: Mapping<TokenId, String>,
+        token_data: Mapping<TokenId, NftData>,
         /// All tokens id
-        all_tokens: Vec<TokenId>, 
+        all_tokens: Vec<TokenId>,
     }
 
-    #[derive(Encode, Decode, Debug, PartialEq, Eq, Copy, Clone, Deserialize)]
+    #[derive(Encode, Decode, Debug, PartialEq, Eq, Copy, Clone)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Error {
         LOL,
@@ -98,10 +91,18 @@ mod erc721 {
         NotAllowed,
     }
 
-    #[derive(Serialize, Deserialize, Debug)]
+    // #[derive(Serialize, Deserialize, Debug)]
+    #[derive(
+        scale::Decode,
+        scale::Encode,
+        Debug,
+        PartialEq,
+        ink_storage::traits::SpreadLayout,
+        ink_storage::traits::PackedLayout,
+    )]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub struct NftData {
-        poebat: Option<String>,
+        poebat: Option<ink_prelude::string::String>,
     }
 
     /// Event emitted when a token transfer occurs.
@@ -179,19 +180,11 @@ mod erc721 {
 
         /// Creates a new token.
         #[ink(message)]
-        pub fn mint(&mut self, id: TokenId, data: String) -> Result<(), Error> {
+        pub fn mint(&mut self, id: TokenId, data: NftData) -> Result<(), Error> {
             let caller = self.env().caller();
 
-            let parsed_data: Result<NftData, _> = serde_json::from_str(&data);
-            if parsed_data.is_err() {
-                ink_env::debug_println!("parse error: {}", parsed_data.err().unwrap());
-                return Err(Error::CannotParseMetadata);
-            }
-
-            let parsed_data = parsed_data.unwrap();
-
             self.add_token_to(&caller, id)?;
-            self.token_data.insert(2, &serde_json::to_string(&parsed_data).unwrap());
+            self.token_data.insert(2, &data);
             self.all_tokens.push(id);
             self.env().emit_event(Transfer {
                 from: Some(AccountId::from([0x0; 32])),
@@ -203,7 +196,7 @@ mod erc721 {
 
         /// Transfer owned token.
         #[ink(message)]
-        pub fn get_nft_info(&self, id: TokenId) -> Result<String, Error> {
+        pub fn get_nft_info(&self, id: TokenId) -> Result<NftData, Error> {
             self.token_data.get(id).ok_or(Error::TokenNotFound)
         }
 
@@ -229,16 +222,20 @@ mod erc721 {
                 .map(|c| c - 1)
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(caller, &count);
-            
-            let mut tokens = owned_tokens
-                .get(caller)
+
+            let mut tokens = owned_tokens.get(caller).ok_or(Error::CannotFetchValue)?;
+
+            let index = tokens
+                .iter()
+                .position(|token| *token == id)
                 .ok_or(Error::CannotFetchValue)?;
-            
-            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             tokens.remove(index);
             owned_tokens.insert(caller, &tokens);
 
-            let index = all_tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            let index = all_tokens
+                .iter()
+                .position(|token| *token == id)
+                .ok_or(Error::CannotFetchValue)?;
             all_tokens.remove(index);
 
             token_owner.remove(id);
@@ -295,11 +292,12 @@ mod erc721 {
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(from, &count);
 
-            let mut tokens = owned_tokens
-                .get(from)
+            let mut tokens = owned_tokens.get(from).ok_or(Error::CannotFetchValue)?;
+
+            let index = tokens
+                .iter()
+                .position(|token| *token == id)
                 .ok_or(Error::CannotFetchValue)?;
-            
-            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             tokens.remove(index);
             owned_tokens.insert(from, &tokens);
 
@@ -328,9 +326,7 @@ mod erc721 {
             let count = owned_tokens_count.get(to).map(|c| c + 1).unwrap_or(1);
             owned_tokens_count.insert(to, &count);
 
-            let mut tokens = owned_tokens
-                .get(to)
-                .unwrap_or_default();
+            let mut tokens = owned_tokens.get(to).unwrap_or_default();
             tokens.push(id);
             owned_tokens.insert(to, &tokens);
 
@@ -372,25 +368,24 @@ mod erc721 {
             // Alice does not owns tokens.
             assert_eq!(erc721.balance_of(accounts.alice), 0);
             // Create token Id 1.
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.balance_of(accounts.alice), 1);
         }
 
         #[ink_lang::test]
         fn get_all_tokens_works() {
-            let accounts =
-                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // no token exists
             assert_eq!(erc721.get_all_tokens().len(), 0);
             // Create tokens
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
-            assert_eq!(erc721.mint(2, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(2, NftData { poebat: None }), Ok(()));
 
             ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.bob);
-            assert_eq!(erc721.mint(3, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(3, NftData { poebat: None }), Ok(()));
 
             // exists 3 tokens
             assert_eq!(erc721.get_all_tokens(), vec![1, 2, 3]);
@@ -399,13 +394,11 @@ mod erc721 {
             assert_eq!(erc721.burn(2), Ok(()));
             // exists 2 tokens
             assert_eq!(erc721.get_all_tokens(), vec![1, 3]);
-
         }
 
         #[ink_lang::test]
         fn tokens_of_owner_works() {
-            let accounts =
-                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Token 1 does not exists.
@@ -413,9 +406,9 @@ mod erc721 {
             // Alice does not owns tokens.
             assert_eq!(erc721.tokens_of_owner(accounts.alice).len(), 0);
             // Create tokens
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
-            assert_eq!(erc721.mint(2, "{}".to_string()), Ok(()));
-            assert_eq!(erc721.mint(3, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(2, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(3, NftData { poebat: None }), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.tokens_of_owner(accounts.alice), vec![1, 2, 3]);
         }
@@ -426,7 +419,7 @@ mod erc721 {
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Create token Id 1.
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // The first Transfer event takes place
             assert_eq!(1, ink_env::test::recorded_events().count());
             // Alice owns 1 token.
@@ -435,7 +428,7 @@ mod erc721 {
             assert_eq!(erc721.owner_of(1), Some(accounts.alice));
             // Cannot create  token Id if it exists.
             // Bob cannot own token Id 1.
-            assert_eq!(erc721.mint(1, "{}".to_string()), Err(Error::TokenExists));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Err(Error::TokenExists));
         }
 
         #[ink_lang::test]
@@ -444,7 +437,7 @@ mod erc721 {
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Create token Id 1 for Alice
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // Alice owns token 1
             assert_eq!(erc721.balance_of(accounts.alice), 1);
             assert_eq!(erc721.owner_of(1), Some(accounts.alice));
@@ -471,7 +464,7 @@ mod erc721 {
             // Token Id 2 does not exists.
             assert_eq!(erc721.owner_of(2), None);
             // Create token Id 2.
-            assert_eq!(erc721.mint(2, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(2, NftData { poebat: None }), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.balance_of(accounts.alice), 1);
             // Token Id 2 is owned by Alice.
@@ -488,17 +481,17 @@ mod erc721 {
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Transfer token fails if it does not exists.
+            assert_eq!(erc721.mint(2, NftData { poebat: Some("lol".to_string()) }), Ok(()));
+            // Alice owns 1 token.
             assert_eq!(
-                erc721.mint(2, "{lol: kek}".to_string()),
-                Err(Error::CannotParseMetadata)
+                erc721.get_nft_info(2),
+                Ok(NftData { poebat: Some("lol".to_string())})
             );
 
             assert_eq!(
-                erc721.mint(2, "{\"poebat\": \"kek\"}".to_string()),
-                Ok(())
+                erc721.get_nft_info(3),
+                Err(Error::TokenNotFound)
             );
-            // Alice owns 1 token.
-            assert_eq!(erc721.get_nft_info(2), Ok("{\"poebat\":\"kek\"}".to_string()));
         }
 
         #[ink_lang::test]
@@ -507,7 +500,7 @@ mod erc721 {
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Create token Id 1 for Alice
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.balance_of(accounts.alice), 1);
             // Alice owns token Id 1.
@@ -534,7 +527,7 @@ mod erc721 {
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Create token Id 1 for Alice
-            assert_eq!(erc721.mint(1, "{}".to_string()), Ok(()));
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // Try burning this token with a different account
             set_caller(accounts.eve);
             assert_eq!(erc721.burn(1), Err(Error::NotOwner));
