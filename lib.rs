@@ -55,7 +55,8 @@ use ink_lang as ink;
 mod erc721 {
     use ink_storage::Mapping;
     use ink_storage::traits::SpreadAllocate;
-
+    use ink_prelude::vec::Vec;
+    
     use scale::{
         Decode,
         Encode,
