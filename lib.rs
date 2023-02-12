@@ -69,6 +69,8 @@ mod erc721 {
     pub struct Erc721 {
         /// Mapping from token to owner.
         token_owner: Mapping<TokenId, AccountId>,
+        // Mapping from owner to all tokens
+        owned_tokens: Mapping<AccountId, Vec<TokenId>>,
         /// Mapping from owner to number of owned token.
         owned_tokens_count: Mapping<AccountId, u32>,
     }
@@ -170,6 +172,7 @@ mod erc721 {
             let caller = self.env().caller();
             let Self {
                 token_owner,
+                owned_tokens,
                 owned_tokens_count,
                 ..
             } = self;
@@ -184,6 +187,15 @@ mod erc721 {
                 .map(|c| c - 1)
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(caller, &count);
+            
+            let mut tokens = owned_tokens
+                .get(caller)
+                .ok_or(Error::CannotFetchValue)?;
+            
+            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            tokens.remove(index);
+            owned_tokens.insert(caller, &tokens);
+
             token_owner.remove(id);
 
             self.env().emit_event(Transfer {
@@ -231,6 +243,7 @@ mod erc721 {
 
             let Self {
                 token_owner,
+                owned_tokens,
                 owned_tokens_count,
                 ..
             } = self;
@@ -240,6 +253,15 @@ mod erc721 {
                 .map(|c| c - 1)
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(from, &count);
+
+            let mut tokens = owned_tokens
+                .get(from)
+                .ok_or(Error::CannotFetchValue)?;
+            
+            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            tokens.remove(index);
+            owned_tokens.insert(from, &tokens);
+
             token_owner.remove(id);
 
             Ok(())
@@ -249,6 +271,7 @@ mod erc721 {
         fn add_token_to(&mut self, to: &AccountId, id: TokenId) -> Result<(), Error> {
             let Self {
                 token_owner,
+                owned_tokens,
                 owned_tokens_count,
                 ..
             } = self;
@@ -262,8 +285,14 @@ mod erc721 {
             };
 
             let count = owned_tokens_count.get(to).map(|c| c + 1).unwrap_or(1);
-
             owned_tokens_count.insert(to, &count);
+
+            let mut tokens = owned_tokens
+                .get(to)
+                .unwrap_or_default();
+            tokens.push(id);
+            owned_tokens.insert(to, &tokens);
+
             token_owner.insert(id, to);
 
             Ok(())
