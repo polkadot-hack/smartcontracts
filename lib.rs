@@ -69,10 +69,12 @@ mod erc721 {
     pub struct Erc721 {
         /// Mapping from token to owner.
         token_owner: Mapping<TokenId, AccountId>,
-        // Mapping from owner to all tokens
+        /// Mapping from owner to all tokens
         owned_tokens: Mapping<AccountId, Vec<TokenId>>,
         /// Mapping from owner to number of owned token.
         owned_tokens_count: Mapping<AccountId, u32>,
+        /// All tokens id
+        all_tokens: Vec<TokenId>, 
     }
 
     #[derive(Encode, Decode, Debug, PartialEq, Eq, Copy, Clone)]
@@ -135,6 +137,12 @@ mod erc721 {
             self.owned_tokens.get(owner).unwrap_or_default()
         }
 
+        /// Return all tokens
+        #[ink(message)]
+        pub fn get_all_tokens(&self) -> Vec<TokenId> {
+            self.all_tokens.clone()
+        }
+
         /// Transfers the token from the caller to the given destination.
         #[ink(message)]
         pub fn transfer(
@@ -164,6 +172,7 @@ mod erc721 {
         pub fn mint(&mut self, id: TokenId) -> Result<(), Error> {
             let caller = self.env().caller();
             self.add_token_to(&caller, id)?;
+            self.all_tokens.push(id);
             self.env().emit_event(Transfer {
                 from: Some(AccountId::from([0x0; 32])),
                 to: Some(caller),
@@ -180,6 +189,7 @@ mod erc721 {
                 token_owner,
                 owned_tokens,
                 owned_tokens_count,
+                all_tokens,
                 ..
             } = self;
 
@@ -201,6 +211,9 @@ mod erc721 {
             let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             tokens.remove(index);
             owned_tokens.insert(caller, &tokens);
+
+            let index = all_tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            all_tokens.remove(index);
 
             token_owner.remove(id);
 
@@ -346,6 +359,31 @@ mod erc721 {
         }
 
         #[ink_lang::test]
+        fn get_all_tokens_works() {
+            let accounts =
+                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            // Create a new contract instance.
+            let mut erc721 = Erc721::new();
+            // no token exists
+            assert_eq!(erc721.get_all_tokens(), vec![]);
+            // Create tokens
+            assert_eq!(erc721.mint(1), Ok(()));
+            assert_eq!(erc721.mint(2), Ok(()));
+
+            ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(erc721.mint(3), Ok(()));
+
+            // exists 3 tokens
+            assert_eq!(erc721.get_all_tokens(), vec![1, 2, 3]);
+            // burn token
+            ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.alice);
+            assert_eq!(erc721.burn(2), Ok(()));
+            // exists 2 tokens
+            assert_eq!(erc721.get_all_tokens(), vec![1, 3]);
+
+        }
+
+        #[ink_lang::test]
         fn tokens_of_owner_works() {
             let accounts =
                 ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
@@ -355,7 +393,7 @@ mod erc721 {
             assert_eq!(erc721.owner_of(1), None);
             // Alice does not owns tokens.
             assert_eq!(erc721.tokens_of_owner(accounts.alice), vec![]);
-            // Create token Id 1.
+            // Create tokens
             assert_eq!(erc721.mint(1), Ok(()));
             assert_eq!(erc721.mint(2), Ok(()));
             assert_eq!(erc721.mint(3), Ok(()));
