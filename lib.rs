@@ -222,20 +222,16 @@ mod erc721 {
                 .map(|c| c - 1)
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(caller, &count);
-
-            let mut tokens = owned_tokens.get(caller).ok_or(Error::CannotFetchValue)?;
-
-            let index = tokens
-                .iter()
-                .position(|token| *token == id)
+            
+            let mut tokens = owned_tokens
+                .get(caller)
                 .ok_or(Error::CannotFetchValue)?;
+            
+            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             tokens.remove(index);
             owned_tokens.insert(caller, &tokens);
 
-            let index = all_tokens
-                .iter()
-                .position(|token| *token == id)
-                .ok_or(Error::CannotFetchValue)?;
+            let index = all_tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             all_tokens.remove(index);
 
             token_owner.remove(id);
@@ -292,12 +288,11 @@ mod erc721 {
                 .ok_or(Error::CannotFetchValue)?;
             owned_tokens_count.insert(from, &count);
 
-            let mut tokens = owned_tokens.get(from).ok_or(Error::CannotFetchValue)?;
-
-            let index = tokens
-                .iter()
-                .position(|token| *token == id)
+            let mut tokens = owned_tokens
+                .get(from)
                 .ok_or(Error::CannotFetchValue)?;
+            
+            let index = tokens.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             tokens.remove(index);
             owned_tokens.insert(from, &tokens);
 
@@ -326,7 +321,9 @@ mod erc721 {
             let count = owned_tokens_count.get(to).map(|c| c + 1).unwrap_or(1);
             owned_tokens_count.insert(to, &count);
 
-            let mut tokens = owned_tokens.get(to).unwrap_or_default();
+            let mut tokens = owned_tokens
+                .get(to)
+                .unwrap_or_default();
             tokens.push(id);
             owned_tokens.insert(to, &tokens);
 
@@ -375,17 +372,18 @@ mod erc721 {
 
         #[ink_lang::test]
         fn get_all_tokens_works() {
-            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            let accounts =
+                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // no token exists
-            assert_eq!(erc721.get_all_tokens().len(), 0);
+            assert_eq!(erc721.get_all_tokens(), vec![]);
             // Create tokens
-            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
-            assert_eq!(erc721.mint(2, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(1, NftData{poebat: None}), Ok(()));
+            assert_eq!(erc721.mint(2, NftData{poebat: None}), Ok(()));
 
             ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.bob);
-            assert_eq!(erc721.mint(3, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(3, NftData{poebat: None}), Ok(()));
 
             // exists 3 tokens
             assert_eq!(erc721.get_all_tokens(), vec![1, 2, 3]);
@@ -398,7 +396,8 @@ mod erc721 {
 
         #[ink_lang::test]
         fn tokens_of_owner_works() {
-            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            let accounts =
+                ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
             // Create a new contract instance.
             let mut erc721 = Erc721::new();
             // Token 1 does not exists.
