@@ -10,11 +10,12 @@ ink_metadata = { version = "3.4", default-features = false, features = ["derive"
 ink_env = { version = "3.4", default-features = false }
 ink_storage = { version = "3.4", default-features = false }
 ink_lang = { version = "3.4", default-features = false }
+ink_prelude = { version = "3.4", default-features = false }
 
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
 scale-info = { version = "2.3", default-features = false, features = ["derive"], optional = true }
 serde_json = "1.0.93"
-serde = "1.0.152"
+serde = { version = "1.0.152", features = ["derive"] }
 
 [lib]
 name = "smartcontract"
@@ -26,5 +27,12 @@ crate-type = [
 
 [features]
 default = ["std"]
-std = ["ink_metadata/std", "ink_env/std", "ink_storage/std", "ink_primitives/std", "scale/std", "scale-info/std"]
+std = [
+    "ink_metadata/std",
+    "ink_env/std",
+    "ink_storage/std",
+    "ink_primitives/std",
+    "scale/std",
+    "scale-info/std",
+]
 ink-as-dependency = []
