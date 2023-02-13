@@ -91,7 +91,6 @@ mod erc721 {
         NotAllowed,
     }
 
-    // #[derive(Serialize, Deserialize, Debug)]
     #[derive(
         scale::Decode,
         scale::Encode,
@@ -184,7 +183,7 @@ mod erc721 {
             let caller = self.env().caller();
 
             self.add_token_to(&caller, id)?;
-            self.token_data.insert(2, &data);
+            self.token_data.insert(id, &data);
             self.all_tokens.push(id);
             self.env().emit_event(Transfer {
                 from: Some(AccountId::from([0x0; 32])),
