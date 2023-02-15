@@ -153,8 +153,8 @@ mod erc721 {
 
         /// Return all tokens
         #[ink(message)]
-        pub fn get_all_tokens(&self) -> Vec<TokenId> {
-            self.all_tokens.clone()
+        pub fn get_all_tokens(&self) -> Vec<(TokenId, NftData)> {
+            self.all_tokens.iter().map(|id: &TokenId| (*id, self.token_data.get(id).unwrap())).collect()
         }
 
         /// Transfers the token from the caller to the given destination.
@@ -378,19 +378,19 @@ mod erc721 {
             // no token exists
             assert_eq!(erc721.get_all_tokens(), vec![]);
             // Create tokens
-            assert_eq!(erc721.mint(1, NftData{poebat: None}), Ok(()));
-            assert_eq!(erc721.mint(2, NftData{poebat: None}), Ok(()));
+            assert_eq!(erc721.mint(1, NftData{poebat: Some("1".to_string())}), Ok(()));
+            assert_eq!(erc721.mint(2, NftData{poebat: Some("2".to_string())}), Ok(()));
 
             ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.bob);
-            assert_eq!(erc721.mint(3, NftData{poebat: None}), Ok(()));
+            assert_eq!(erc721.mint(3, NftData{poebat: Some("3".to_string())}), Ok(()));
 
             // exists 3 tokens
-            assert_eq!(erc721.get_all_tokens(), vec![1, 2, 3]);
+            assert_eq!(erc721.get_all_tokens(), vec![(1, NftData{poebat: Some("1".to_string())}), (2, NftData{poebat: Some("2".to_string())}), (3, NftData{poebat: Some("3".to_string())})]);
             // burn token
             ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.alice);
             assert_eq!(erc721.burn(2), Ok(()));
             // exists 2 tokens
-            assert_eq!(erc721.get_all_tokens(), vec![1, 3]);
+            assert_eq!(erc721.get_all_tokens(), vec![(1, NftData{poebat: Some("1".to_string())}), (3, NftData{poebat: Some("3".to_string())})]);
         }
 
         #[ink_lang::test]
@@ -444,7 +444,6 @@ mod erc721 {
             // The first Transfer event takes place
             assert_eq!(1, ink_env::test::recorded_events().count());
             // Alice transfers token 1 to Bob
-            println!("{:?}", erc721.token_owner.get(1));
             assert_eq!(erc721.transfer(accounts.bob, 1), Ok(()));
             // The second Transfer event takes place
             assert_eq!(2, ink_env::test::recorded_events().count());
