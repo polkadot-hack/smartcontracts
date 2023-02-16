@@ -75,6 +75,25 @@ mod erc721 {
         token_data: Mapping<TokenId, NftData>,
         /// All tokens id
         all_tokens: Vec<TokenId>,
+        
+        /// prices of token
+        prices: Mapping<TokenId, Balance>,
+        /// tokens which published for sale
+        tokens_for_sale: Vec<TokenId>,
+    }
+
+    #[derive(
+        scale::Decode,
+        scale::Encode,
+        Debug,
+        PartialEq,
+        ink_storage::traits::SpreadLayout,
+        ink_storage::traits::PackedLayout,
+    )]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct ForSale {
+        id: TokenId,
+        price: Balance,
     }
 
     #[derive(Encode, Decode, Debug, PartialEq, Eq, Copy, Clone)]
@@ -89,6 +108,11 @@ mod erc721 {
         CannotInsert,
         CannotFetchValue,
         NotAllowed,
+        AlreadyForSale,
+        NotForSale,
+        NotEnoughSent,
+        CannotMakeTransfer,
+        CannotTransferToken,
     }
 
     #[derive(
@@ -121,7 +145,7 @@ mod erc721 {
         pub fn new() -> Self {
             // This call is required to correctly initialize the
             // Mapping of the contract.
-            ink_lang::utils::initialize_contract(|contract: &mut Self| {
+            ink_lang::utils::initialize_contract(|_: &mut Self| {
                 // let caller = Self::env().caller();
             })
         }
@@ -190,6 +214,98 @@ mod erc721 {
                 to: Some(caller),
                 id,
             });
+            Ok(())
+        }
+        
+        /// add token id for sale 
+        #[ink(message)]
+        pub fn publish_for_sale(&mut self, id: TokenId, price: Balance) -> Result<(), Error> {
+            let caller = self.env().caller();
+            if !self.exists(id) {
+                return Err(Error::TokenNotFound);
+            };
+            if !self.is_owner_of(Some(caller), id) {
+                return Err(Error::NotApproved);
+            };
+            if self.prices.contains(id) {
+                return Err(Error::AlreadyForSale);
+            }
+            
+            self.tokens_for_sale.push(id);
+            self.prices.insert(id, &price);
+            
+            Ok(())
+        }
+
+        /// get all tokens which published for sale
+        #[ink(message)]
+        pub fn get_tokens_for_sale(&self) -> Vec<ForSale> {
+            let mut res = Vec::new();
+            for val in self.tokens_for_sale.iter() {
+                if self.prices.contains(val) {
+                    res.push(ForSale{
+                        id: *val,
+                        price: self.prices.get(val).unwrap(),
+                    });
+                }
+            }
+            res
+        }
+
+        /// remove tokens from saling
+        #[ink(message)]
+        pub fn remove_from_sale(&mut self, id: TokenId) -> Result<(), Error>{
+            let caller = self.env().caller();
+            if !self.exists(id) {
+                return Err(Error::TokenNotFound);
+            };
+            if !self.is_owner_of(Some(caller), id) {
+                return Err(Error::NotApproved);
+            };
+            if self.prices.contains(id) {
+                return Err(Error::AlreadyForSale);
+            }
+            let index = self.tokens_for_sale.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            self.tokens_for_sale.remove(index);
+            self.prices.remove(id);
+            
+            Ok(())
+        }
+
+        /// buy token for sale
+        #[ink(message, payable)]
+        pub fn buy_nft(&mut self, id: TokenId) -> Result<(), Error>{
+            let caller = self.env().caller();
+            if !self.exists(id) {
+                return Err(Error::TokenNotFound);
+            };
+            if self.is_owner_of(Some(caller), id) { // не продаем нфт ее же владельцу
+                return Err(Error::NotApproved);
+            };
+            if !self.prices.contains(id) {
+                return Err(Error::NotForSale);
+            }
+            let transfered_price = self.env().transferred_value();
+            let token_price = self.prices.get(id).unwrap();
+            if token_price > transfered_price {
+                return Err(Error::NotEnoughSent);
+            }
+
+            let token_owner = self.owner_of(id).unwrap_or_default(); // хз почему мы можем не найти, но в этом кейсе мы платим на счет контракта хе-хе
+            let err = self.env().transfer(token_owner, token_price);
+            if err.is_err() {
+                return Err(Error::CannotMakeTransfer);
+            }
+            
+            let err = self.transfer_token_from(&caller, &token_owner, id);
+            if err.is_err() {
+                return Err(Error::CannotTransferToken)
+            }
+
+            let index = self.tokens_for_sale.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
+            self.tokens_for_sale.remove(index);
+            self.prices.remove(id);
+            
             Ok(())
         }
 
