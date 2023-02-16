@@ -212,8 +212,8 @@ mod erc721 {
             if !self.is_owner_of(Some(caller), id) {
                 return Err(Error::NotApproved);
             };
-            if self.prices.contains(id) {
-                return Err(Error::AlreadyForSale);
+            if !self.prices.contains(id) {
+                return Err(Error::NotForSale);
             }
             let index = self.tokens_for_sale.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             self.tokens_for_sale.remove(index);
@@ -247,10 +247,7 @@ mod erc721 {
                 return Err(Error::CannotMakeTransfer);
             }
             
-            let err = self.transfer_token_from(&caller, &token_owner, id);
-            if err.is_err() {
-                return Err(Error::CannotTransferToken)
-            }
+            self.transfer_token_from(&token_owner, &caller, id)?;
 
             let index = self.tokens_for_sale.iter().position(|token| *token == id).ok_or(Error::CannotFetchValue)?;
             self.tokens_for_sale.remove(index);
@@ -317,11 +314,10 @@ mod erc721 {
             to: &AccountId,
             id: TokenId,
         ) -> Result<(), Error> {
-            let caller = self.env().caller();
             if !self.exists(id) {
                 return Err(Error::TokenNotFound);
             };
-            if !self.is_owner_of(Some(caller), id) {
+            if !self.is_owner_of(Some(*from), id) {
                 return Err(Error::NotApproved);
             };
             self.remove_token_from(from, id)?;
@@ -433,6 +429,47 @@ mod erc721 {
             assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
             // Alice owns 1 token.
             assert_eq!(erc721.balance_of(accounts.alice), 1);
+        }
+        
+        #[ink_lang::test]
+        fn publish_for_sale_works() {
+            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            // Create a new contract instance.
+            let mut erc721 = Erc721::new();
+
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(2, NftData { poebat: None }), Ok(()));
+            assert_eq!(erc721.mint(3, NftData { poebat: None }), Ok(()));
+
+            assert_eq!(erc721.publish_for_sale(1, 10), Ok(()));
+            assert_eq!(erc721.get_tokens_for_sale(), vec![ForSale{id: 1, price: 10}]);
+
+            assert_eq!(erc721.publish_for_sale(2, 100), Ok(()));
+            assert_eq!(erc721.get_tokens_for_sale(), vec![ForSale{id: 1, price: 10}, ForSale{id: 2, price: 100}]);
+
+            assert_eq!(erc721.remove_from_sale(1), Ok(()));
+            assert_eq!(erc721.get_tokens_for_sale(), vec![ForSale{id: 2, price: 100}]);
+        }
+
+        #[ink_lang::test]
+        fn buy_nft_works() {
+            let accounts = ink_env::test::default_accounts::<ink_env::DefaultEnvironment>();
+            let mut erc721 = Erc721::new();
+
+            assert_eq!(erc721.mint(1, NftData { poebat: None }), Ok(()));
+
+            assert_eq!(erc721.publish_for_sale(1, 10), Ok(()));
+            assert_eq!(erc721.get_tokens_for_sale(), vec![ForSale{id: 1, price: 10}]);
+
+            ink_env::test::set_caller::<ink_env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(erc721.is_owner_of(Some(accounts.alice), 1), true);
+            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 10);
+            ink_env::test::set_value_transferred::<ink_env::DefaultEnvironment>(10);
+            assert_eq!(erc721.buy_nft(1), Ok(()));
+            
+            assert_eq!(erc721.get_tokens_for_sale(), vec![]);
+            assert_eq!(erc721.is_owner_of(Some(accounts.bob), 1), true);
+
         }
 
         #[ink_lang::test]
